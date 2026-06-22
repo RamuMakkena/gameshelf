@@ -1,11 +1,26 @@
-import { CSSProperties, StrictMode, useEffect, useState } from 'react';
+import { CSSProperties, FormEvent, StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ArrowLeft, FlipHorizontal, Grid2X2, Home, RotateCcw, RotateCw, Shuffle, Undo2 } from 'lucide-react';
 import './styles.css';
 
-type Route = 'home' | 'tic-tac-toe' | 'memory-match' | 'wooden-solitaire' | 'connect-four' | 'genius-square' | 'deck-solitaire';
+type Route =
+  | 'home'
+  | 'tic-tac-toe'
+  | 'memory-match'
+  | 'wooden-solitaire'
+  | 'connect-four'
+  | 'genius-square'
+  | 'deck-solitaire'
+  | 'twenty-forty-eight'
+  | 'word-shift';
 type Mark = 'X' | 'O';
 type Square = Mark | null;
+type WordLength = 3 | 4 | 5;
+type MoveDirection = 'up' | 'down' | 'left' | 'right';
+type Game2048State = {
+  board: number[];
+  score: number;
+};
 type ConnectDisc = 'red' | 'yellow';
 type ConnectCell = ConnectDisc | null;
 type ConnectMode = 'system' | 'players';
@@ -88,9 +103,38 @@ const games: Array<{ route: Route; title: string; description: string }> = [
     title: 'Solitaire',
     description: 'Play a simple Klondike game with a standard deck.',
   },
+  {
+    route: 'twenty-forty-eight',
+    title: '2048',
+    description: 'Slide tiles up to 4096 on a classic 4x4 grid.',
+  },
+  {
+    route: 'word-shift',
+    title: 'Word Shift',
+    description: 'Change one letter at a time to make new words.',
+  },
 ];
 
 const solitaireHoles = createSolitaireHoles();
+const wordBank: Record<WordLength, string[]> = {
+  3: [
+    'cat', 'bat', 'bad', 'bed', 'bee', 'see', 'sea', 'tea', 'ten', 'pen', 'pan', 'can', 'fan', 'fin', 'fit', 'sit',
+    'sat', 'mat', 'map', 'mop', 'top', 'tip', 'sip', 'sap', 'cap', 'cop', 'cup', 'cut', 'cot', 'dot', 'dog', 'dig',
+    'fig', 'fog', 'log', 'lag', 'bag', 'bug', 'rug', 'run', 'sun', 'fun', 'bun', 'bin', 'pin', 'pit', 'pot', 'pod',
+  ],
+  4: [
+    'cold', 'cord', 'card', 'ward', 'warm', 'worm', 'word', 'wood', 'food', 'fold', 'gold', 'goad', 'load', 'loan',
+    'lean', 'bean', 'bear', 'pear', 'peal', 'seal', 'seat', 'meat', 'meet', 'feet', 'feed', 'seed', 'send', 'sand',
+    'band', 'bend', 'bond', 'fond', 'find', 'fine', 'fire', 'hire', 'wire', 'wise', 'rise', 'rose', 'hose', 'home',
+    'come', 'cone', 'bone', 'bore', 'core', 'care',
+  ],
+  5: [
+    'stone', 'store', 'shore', 'share', 'shark', 'spark', 'spare', 'stare', 'stars', 'sears', 'bears', 'beard', 'heard',
+    'heart', 'earth', 'worth', 'words', 'cords', 'cards', 'cares', 'caves', 'saves', 'sales', 'tales', 'takes', 'makes',
+    'males', 'miles', 'piles', 'pills', 'fills', 'falls', 'balls', 'bells', 'belts', 'melts', 'meats', 'meets', 'seeds',
+    'sends', 'sands', 'bands', 'bends', 'bonds', 'ponds', 'pound', 'sound', 'round',
+  ],
+};
 const geniusPieces: GeniusPiece[] = [
   { id: 'a', name: 'Four Bar 1', color: '#2c7a7b', cells: [[0, 0], [0, 1], [0, 2], [0, 3]] },
   { id: 'b', name: 'Z Four', color: '#c7472f', cells: [[0, 0], [0, 1], [1, 1], [1, 2]] },
@@ -178,6 +222,8 @@ function GameFrame({ route, onHome }: { route: Route; onHome: () => void }) {
       {route === 'connect-four' && <ConnectFour title={game?.title ?? 'Connect 4'} onHome={onHome} />}
       {route === 'genius-square' && <GeniusSquare title={game?.title ?? 'Genius Square'} onHome={onHome} />}
       {route === 'deck-solitaire' && <DeckSolitaire title={game?.title ?? 'Solitaire'} onHome={onHome} />}
+      {route === 'twenty-forty-eight' && <TwentyFortyEight title={game?.title ?? '2048'} onHome={onHome} />}
+      {route === 'word-shift' && <WordShift title={game?.title ?? 'Word Shift'} onHome={onHome} />}
     </section>
   );
 }
@@ -227,7 +273,7 @@ function TicTacToe({ title, onHome }: { title: string; onHome: () => void }) {
   const nextMark: Mark = board.filter(Boolean).length % 2 === 0 ? 'X' : 'O';
   const winner = getWinner(board);
   const isDraw = !winner && board.every(Boolean);
-  const status = winner ? `${winner} wins` : isDraw ? 'Draw game' : `${nextMark} to move`;
+  const status = winner ? `${winner.mark} wins` : isDraw ? 'Draw game' : `${nextMark} to move`;
 
   function play(index: number) {
     if (board[index] || winner) return;
@@ -249,7 +295,12 @@ function TicTacToe({ title, onHome }: { title: string; onHome: () => void }) {
 
       <div className="tic-board" aria-label="Tic Tac Toe board">
         {board.map((square, index) => (
-          <button key={index} className="tic-square" onClick={() => play(index)} aria-label={`Square ${index + 1}`}>
+          <button
+            key={index}
+            className={`tic-square ${winner?.line.includes(index) ? 'is-winner' : ''}`}
+            onClick={() => play(index)}
+            aria-label={`Square ${index + 1}`}
+          >
             {square}
           </button>
         ))}
@@ -271,10 +322,328 @@ function getWinner(board: Square[]) {
   ];
 
   for (const [a, b, c] of lines) {
-    if (board[a] && board[a] === board[b] && board[a] === board[c]) return board[a];
+    if (board[a] && board[a] === board[b] && board[a] === board[c]) return { mark: board[a], line: [a, b, c] };
   }
 
   return null;
+}
+
+function TwentyFortyEight({ title, onHome }: { title: string; onHome: () => void }) {
+  const [history, setHistory] = useState<Game2048State[]>(() => [create2048State()]);
+  const state = history[history.length - 1];
+  const maxTile = Math.max(...state.board);
+  const isWon = maxTile >= 4096;
+  const isOver = !isWon && !canMove2048(state.board);
+  const status = isWon ? '4096 reached' : isOver ? 'Game over' : `Score ${state.score}`;
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const keyMap: Record<string, MoveDirection | undefined> = {
+        ArrowUp: 'up',
+        ArrowDown: 'down',
+        ArrowLeft: 'left',
+        ArrowRight: 'right',
+      };
+      const direction = keyMap[event.key];
+      if (!direction) return;
+
+      event.preventDefault();
+      move(direction);
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [state]);
+
+  function move(direction: MoveDirection) {
+    if (isWon || isOver) return;
+
+    const moved = move2048Board(state.board, direction);
+    if (!moved.changed) return;
+
+    setHistory((steps) => [
+      ...steps,
+      {
+        board: addRandom2048Tile(moved.board),
+        score: state.score + moved.score,
+      },
+    ]);
+  }
+
+  function reset() {
+    setHistory([create2048State()]);
+  }
+
+  return (
+    <>
+      <GameToolbar
+        title={title}
+        status={status}
+        canUndo={history.length > 1}
+        onUndo={() => setHistory((steps) => (steps.length > 1 ? steps.slice(0, -1) : steps))}
+        onReset={reset}
+        onHome={onHome}
+      />
+
+      <div className="game-2048">
+        <div className="score-2048">
+          <span>Score</span>
+          <strong>{state.score}</strong>
+          <span>Best tile</span>
+          <strong>{maxTile}</strong>
+        </div>
+
+        <div className="board-2048" aria-label="2048 board">
+          {state.board.map((value, index) => (
+            <div key={index} className={`tile-2048 tile-${value || 'empty'}`}>
+              {value || ''}
+            </div>
+          ))}
+        </div>
+
+        <div className="controls-2048" aria-label="2048 controls">
+          <button onClick={() => move('up')}>Up</button>
+          <button onClick={() => move('left')}>Left</button>
+          <button onClick={() => move('right')}>Right</button>
+          <button onClick={() => move('down')}>Down</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function create2048State(): Game2048State {
+  return {
+    board: addRandom2048Tile(addRandom2048Tile(Array(16).fill(0))),
+    score: 0,
+  };
+}
+
+function addRandom2048Tile(board: number[]) {
+  const empty = board
+    .map((value, index) => (value === 0 ? index : -1))
+    .filter((index) => index >= 0);
+  if (empty.length === 0) return board;
+
+  const next = [...board];
+  const index = empty[Math.floor(Math.random() * empty.length)];
+  next[index] = Math.random() < 0.9 ? 2 : 4;
+  return next;
+}
+
+function move2048Board(board: number[], direction: MoveDirection) {
+  const next = Array(16).fill(0);
+  let score = 0;
+
+  for (let line = 0; line < 4; line += 1) {
+    const indexes = get2048LineIndexes(line, direction);
+    const values = indexes.map((index) => board[index]);
+    const merged = merge2048Line(values);
+    score += merged.score;
+    indexes.forEach((index, valueIndex) => {
+      next[index] = merged.values[valueIndex];
+    });
+  }
+
+  return {
+    board: next,
+    changed: next.some((value, index) => value !== board[index]),
+    score,
+  };
+}
+
+function get2048LineIndexes(line: number, direction: MoveDirection) {
+  if (direction === 'left') return [0, 1, 2, 3].map((col) => line * 4 + col);
+  if (direction === 'right') return [3, 2, 1, 0].map((col) => line * 4 + col);
+  if (direction === 'up') return [0, 1, 2, 3].map((row) => row * 4 + line);
+  return [3, 2, 1, 0].map((row) => row * 4 + line);
+}
+
+function merge2048Line(values: number[]) {
+  const compact = values.filter(Boolean);
+  const merged: number[] = [];
+  let score = 0;
+
+  for (let index = 0; index < compact.length; index += 1) {
+    if (compact[index] === compact[index + 1]) {
+      const value = compact[index] * 2;
+      merged.push(value);
+      score += value;
+      index += 1;
+    } else {
+      merged.push(compact[index]);
+    }
+  }
+
+  while (merged.length < 4) merged.push(0);
+  return { values: merged, score };
+}
+
+function canMove2048(board: number[]) {
+  if (board.some((value) => value === 0)) return true;
+
+  for (let row = 0; row < 4; row += 1) {
+    for (let col = 0; col < 4; col += 1) {
+      const value = board[row * 4 + col];
+      if (col < 3 && value === board[row * 4 + col + 1]) return true;
+      if (row < 3 && value === board[(row + 1) * 4 + col]) return true;
+    }
+  }
+
+  return false;
+}
+
+function WordShift({ title, onHome }: { title: string; onHome: () => void }) {
+  const [wordLength, setWordLength] = useState<WordLength>(4);
+  const [history, setHistory] = useState<string[]>(() => [getRandomWord(4)]);
+  const [entry, setEntry] = useState('');
+  const [message, setMessage] = useState('Change one letter to make a new word.');
+  const [bestScore, setBestScore] = useState(() => getStoredWordBestScore());
+  const [isChecking, setIsChecking] = useState(false);
+  const currentWord = history[history.length - 1];
+  const score = history.length - 1;
+  const status = `Score ${score} · Best ${bestScore}`;
+  const usedWords = new Set(history);
+
+  useEffect(() => {
+    if (score > bestScore) {
+      setBestScore(score);
+      localStorage.setItem('gameshelf-word-shift-best', String(score));
+    }
+  }, [bestScore, score]);
+
+  function changeLength(nextLength: WordLength) {
+    const startWord = getRandomWord(nextLength);
+    setWordLength(nextLength);
+    setHistory([startWord]);
+    setEntry('');
+    setMessage('Change one letter to make a new word.');
+  }
+
+  async function submitWord(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextWord = entry.trim().toLowerCase();
+    if (isChecking) return;
+
+    if (nextWord.length !== wordLength) {
+      setMessage(`Use exactly ${wordLength} letters.`);
+      return;
+    }
+
+    if (!/^[a-z]+$/.test(nextWord)) {
+      setMessage('Use letters only.');
+      return;
+    }
+
+    if (usedWords.has(nextWord)) {
+      setMessage('That word was already used this session.');
+      return;
+    }
+
+    if (countLetterChanges(currentWord, nextWord) !== 1) {
+      setMessage('Change exactly one letter from the current word.');
+      return;
+    }
+
+    setIsChecking(true);
+    setMessage('Checking dictionary...');
+    const isValidWord = await checkDictionaryWord(nextWord);
+    setIsChecking(false);
+
+    if (!isValidWord) {
+      setMessage('Dictionary did not recognize that word. Internet is required for this check.');
+      return;
+    }
+
+    setHistory((words) => [...words, nextWord]);
+    setEntry('');
+    setMessage('Good word.');
+  }
+
+  function reset() {
+    const startWord = getRandomWord(wordLength);
+    setHistory([startWord]);
+    setEntry('');
+    setMessage('Change one letter to make a new word.');
+  }
+
+  return (
+    <>
+      <GameToolbar
+        title={title}
+        status={status}
+        canUndo={history.length > 1}
+        onUndo={() => {
+          setHistory((words) => (words.length > 1 ? words.slice(0, -1) : words));
+          setMessage('Last word removed.');
+        }}
+        onReset={reset}
+        onHome={onHome}
+      />
+
+      <div className="word-game">
+        <div className="word-warning">
+          Dictionary validation needs internet. If the dictionary service is unavailable, new words cannot be accepted.
+        </div>
+
+        <div className="word-length-picker" aria-label="Choose word length">
+          {([3, 4, 5] as WordLength[]).map((length) => (
+            <button key={length} className={wordLength === length ? 'is-active' : ''} onClick={() => changeLength(length)}>
+              {length} letters
+            </button>
+          ))}
+        </div>
+
+        <div className="current-word-card">
+          <span>Current word</span>
+          <strong>{currentWord}</strong>
+        </div>
+
+        <form className="word-entry" onSubmit={submitWord}>
+          <input
+            value={entry}
+            maxLength={wordLength}
+            onChange={(event) => setEntry(event.target.value.toLowerCase())}
+            placeholder={`${wordLength}-letter word`}
+            aria-label="Next word"
+            disabled={isChecking}
+          />
+          <button type="submit" disabled={isChecking}>{isChecking ? 'Checking' : 'Submit'}</button>
+        </form>
+
+        <p className="word-message">{message}</p>
+
+        <div className="used-word-list" aria-label="Used words">
+          {history.map((word, index) => (
+            <span key={`${word}-${index}`}>{word}</span>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function getRandomWord(length: WordLength) {
+  const words = wordBank[length];
+  return words[Math.floor(Math.random() * words.length)];
+}
+
+function countLetterChanges(first: string, second: string) {
+  return first.split('').filter((letter, index) => letter !== second[index]).length;
+}
+
+function getStoredWordBestScore() {
+  const value = Number(localStorage.getItem('gameshelf-word-shift-best'));
+  return Number.isFinite(value) ? value : 0;
+}
+
+async function checkDictionaryWord(word: string) {
+  try {
+    const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 function MemoryMatch({ title, onHome }: { title: string; onHome: () => void }) {
