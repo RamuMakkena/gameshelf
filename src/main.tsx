@@ -1098,6 +1098,7 @@ function GeniusSquare({ title, onHome }: { title: string; onHome: () => void }) 
   const selected = geniusPieces.find((piece) => piece.id === selectedPiece) ?? geniusPieces[0];
   const orientations = getGeniusPieceOrientations(selected);
   const selectedCells = orientations[orientationIndex % orientations.length];
+  const selectedAnchor = getGeniusPieceAnchor(selectedCells);
 
   function place(row: number, col: number) {
     const placed = state.placements.find((item) =>
@@ -1120,7 +1121,7 @@ function GeniusSquare({ title, onHome }: { title: string; onHome: () => void }) 
     if (state.blockers.includes(getGeniusCellId(row, col))) return;
     if (state.placements.some((item) => item.pieceId === selected.id)) return;
 
-    const cells = selectedCells.map(([cellRow, cellCol]) => [row + cellRow, col + cellCol] as [number, number]);
+    const cells = getAnchoredGeniusCells(selectedCells, selectedAnchor, row, col);
     if (!canPlaceGeniusPiece(cells, state)) return;
 
     setHistory((steps) => [
@@ -1203,7 +1204,7 @@ function GeniusSquare({ title, onHome }: { title: string; onHome: () => void }) 
             const piece = placement ? geniusPieces.find((item) => item.id === placement.pieceId) : null;
             const isBlocker = state.blockers.includes(cellId);
             const canPreview = !placement && !isBlocker && !state.placements.some((item) => item.pieceId === selected.id)
-              ? canPlaceGeniusPiece(selectedCells.map(([cellRow, cellCol]) => [row + cellRow, col + cellCol] as [number, number]), state)
+              ? canPlaceGeniusPiece(getAnchoredGeniusCells(selectedCells, selectedAnchor, row, col), state)
               : false;
 
             return (
@@ -1292,6 +1293,14 @@ function getGeniusOccupiedCells(state: GeniusState) {
 function canPlaceGeniusPiece(cells: Array<[number, number]>, state: GeniusState) {
   const occupied = getGeniusOccupiedCells(state);
   return cells.every(([row, col]) => row >= 0 && row < 6 && col >= 0 && col < 6 && !occupied.has(getGeniusCellId(row, col)));
+}
+
+function getGeniusPieceAnchor(cells: Array<[number, number]>) {
+  return normalizeCells(cells)[0];
+}
+
+function getAnchoredGeniusCells(cells: Array<[number, number]>, anchor: [number, number], row: number, col: number) {
+  return cells.map(([cellRow, cellCol]) => [row + cellRow - anchor[0], col + cellCol - anchor[1]] as [number, number]);
 }
 
 function getTransformedPieceCells(piece: GeniusPiece, rotation: number, flipped: boolean) {
