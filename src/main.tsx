@@ -1,6 +1,6 @@
 import { CSSProperties, FormEvent, StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ArrowLeft, FlipHorizontal, Grid2X2, Home, RotateCcw, RotateCw, Shuffle, Undo2 } from 'lucide-react';
+import { ArrowLeft, FlipHorizontal, Home, RotateCcw, RotateCw, Shuffle, Undo2 } from 'lucide-react';
 import './styles.css';
 
 type Route =
@@ -192,9 +192,7 @@ function GamesHome({ onOpen }: { onOpen: (route: Route) => void }) {
       <div className="game-grid">
         {games.map((game) => (
           <button className="game-card" key={game.route} onClick={() => onOpen(game.route)}>
-            <span className="game-card-icon">
-              <Grid2X2 size={26} aria-hidden="true" />
-            </span>
+            <GameIconPreview route={game.route} />
             <span>
               <strong>{game.title}</strong>
               <small>{game.description}</small>
@@ -203,6 +201,60 @@ function GamesHome({ onOpen }: { onOpen: (route: Route) => void }) {
         ))}
       </div>
     </section>
+  );
+}
+
+function GameIconPreview({ route }: { route: Route }) {
+  return (
+    <span className={`game-card-icon ${route}`} aria-hidden="true">
+      {route === 'tic-tac-toe' && (
+        <span className="mini-tic">
+          <span>X</span><span /> <span>O</span>
+          <span /> <span>X</span><span />
+          <span>O</span><span /> <span>X</span>
+        </span>
+      )}
+      {route === 'memory-match' && (
+        <span className="mini-memory">
+          <span /> <span className="open">A</span>
+          <span className="open">A</span> <span />
+        </span>
+      )}
+      {route === 'wooden-solitaire' && (
+        <span className="mini-solitaire">
+          {Array.from({ length: 9 }, (_, index) => <span key={index} className={index === 4 ? 'hole' : ''} />)}
+        </span>
+      )}
+      {route === 'connect-four' && (
+        <span className="mini-connect">
+          {['red', 'yellow', 'red', 'yellow', 'red', 'yellow'].map((color, index) => <span key={index} className={color} />)}
+        </span>
+      )}
+      {route === 'genius-square' && (
+        <span className="mini-genius">
+          <span /><span /><span className="peg" />
+          <span className="a" /><span className="a" /><span className="b" />
+          <span className="c" /><span className="b" /><span className="b" />
+        </span>
+      )}
+      {route === 'deck-solitaire' && (
+        <span className="mini-cards">
+          <span className="back" />
+          <span className="face">A♥</span>
+        </span>
+      )}
+      {route === 'twenty-forty-eight' && (
+        <span className="mini-2048">
+          <span>2</span><span>4</span>
+          <span>8</span><span>16</span>
+        </span>
+      )}
+      {route === 'word-shift' && (
+        <span className="mini-word">
+          <span>C</span><span>A</span><span>T</span>
+        </span>
+      )}
+    </span>
   );
 }
 
