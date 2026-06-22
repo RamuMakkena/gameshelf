@@ -3,13 +3,29 @@ import { createRoot } from 'react-dom/client';
 import { ArrowLeft, FlipHorizontal, Grid2X2, Home, RotateCcw, RotateCw, Shuffle, Undo2 } from 'lucide-react';
 import './styles.css';
 
-type Route = 'home' | 'tic-tac-toe' | 'memory-match' | 'wooden-solitaire' | 'connect-four' | 'genius-square';
+type Route = 'home' | 'tic-tac-toe' | 'memory-match' | 'wooden-solitaire' | 'connect-four' | 'genius-square' | 'deck-solitaire';
 type Mark = 'X' | 'O';
 type Square = Mark | null;
 type ConnectDisc = 'red' | 'yellow';
 type ConnectCell = ConnectDisc | null;
 type ConnectMode = 'system' | 'players';
 type ConnectDifficulty = 'easy' | 'medium' | 'hard';
+type Suit = 'spades' | 'hearts' | 'diamonds' | 'clubs';
+type PlayingCard = {
+  id: string;
+  suit: Suit;
+  rank: number;
+  faceUp: boolean;
+};
+type DeckSolitaireState = {
+  stock: PlayingCard[];
+  waste: PlayingCard[];
+  foundations: Record<Suit, PlayingCard[]>;
+  tableau: PlayingCard[][];
+};
+type DeckSelection =
+  | { source: 'waste'; index: number }
+  | { source: 'tableau'; column: number; index: number };
 type MemoryCard = {
   id: number;
   value: string;
@@ -66,6 +82,11 @@ const games: Array<{ route: Route; title: string; description: string }> = [
     route: 'genius-square',
     title: 'Genius Square',
     description: 'Fit every puzzle piece around seven blockers.',
+  },
+  {
+    route: 'deck-solitaire',
+    title: 'Solitaire',
+    description: 'Play a simple Klondike game with a standard deck.',
   },
 ];
 
@@ -156,6 +177,7 @@ function GameFrame({ route, onHome }: { route: Route; onHome: () => void }) {
       {route === 'wooden-solitaire' && <WoodenSolitaire title={game?.title ?? 'Wooden Solitaire'} onHome={onHome} />}
       {route === 'connect-four' && <ConnectFour title={game?.title ?? 'Connect 4'} onHome={onHome} />}
       {route === 'genius-square' && <GeniusSquare title={game?.title ?? 'Genius Square'} onHome={onHome} />}
+      {route === 'deck-solitaire' && <DeckSolitaire title={game?.title ?? 'Solitaire'} onHome={onHome} />}
     </section>
   );
 }
@@ -942,6 +964,257 @@ function getGeniusCellsKey(cells: Array<[number, number]>) {
 
 function shuffleArray<T>(items: T[]) {
   return [...items].sort(() => Math.random() - 0.5);
+}
+
+function DeckSolitaire({ title, onHome }: { title: string; onHome: () => void }) {
+  const [history, setHistory] = useState<DeckSolitaireState[]>(() => [createDeckSolitaireState()]);
+  const [selection, setSelection] = useState<DeckSelection | null>(null);
+  const state = history[history.length - 1];
+  const foundationCount = Object.values(state.foundations).reduce((total, pile) => total + pile.length, 0);
+  const status = foundationCount === 52 ? 'Solved' : `${foundationCount} cards in foundations`;
+
+  function commit(nextState: DeckSolitaireState) {
+    setHistory((steps) => [...steps, nextState]);
+    setSelection(null);
+  }
+
+  function drawStock() {
+    if (state.stock.length > 0) {
+      const stock = [...state.stock];
+      const card = stock.pop()!;
+      commit({ ...state, stock, waste: [...state.waste, { ...card, faceUp: true }] });
+      return;
+    }
+
+    if (state.waste.length > 0) {
+      commit({ ...state, stock: state.waste.map((card) => ({ ...card, faceUp: false })).reverse(), waste: [] });
+    }
+  }
+
+  function selectWaste() {
+    if (state.waste.length === 0) return;
+    setSelection({ source: 'waste', index: state.waste.length - 1 });
+  }
+
+  function selectTableau(column: number, index: number) {
+    const card = state.tableau[column][index];
+    if (!card?.faceUp) return;
+
+    if (selection) {
+      const moved = moveToTableau(state, selection, column);
+      if (moved) {
+        commit(moved);
+        return;
+      }
+    }
+
+    setSelection({ source: 'tableau', column, index });
+  }
+
+  function moveSelectedToFoundation(suit: Suit) {
+    if (!selection) return;
+    const moved = moveToFoundation(state, selection, suit);
+    if (moved) commit(moved);
+  }
+
+  function moveSelectedToTableau(column: number) {
+    if (!selection) return;
+    const moved = moveToTableau(state, selection, column);
+    if (moved) commit(moved);
+  }
+
+  function reset() {
+    setHistory([createDeckSolitaireState()]);
+    setSelection(null);
+  }
+
+  return (
+    <>
+      <GameToolbar
+        title={title}
+        status={status}
+        canUndo={history.length > 1}
+        onUndo={() => {
+          setSelection(null);
+          setHistory((steps) => (steps.length > 1 ? steps.slice(0, -1) : steps));
+        }}
+        onReset={reset}
+        onHome={onHome}
+      />
+
+      <div className="solitaire-help">
+        Draw from the stock. Select a face-up card or stack, then choose a tableau column or foundation.
+      </div>
+
+      <div className="deck-solitaire">
+        <div className="solitaire-top-row">
+          <button className="card-slot stock-slot" onClick={drawStock} aria-label="Draw from stock">
+            {state.stock.length > 0 ? <span className="card-back">{state.stock.length}</span> : state.waste.length > 0 ? '↻' : ''}
+          </button>
+          <button className="card-slot" onClick={selectWaste} aria-label="Waste pile">
+            {state.waste.length > 0 && (
+              <PlayingCardView
+                card={state.waste[state.waste.length - 1]}
+                selected={selection?.source === 'waste'}
+              />
+            )}
+          </button>
+
+          <div className="foundation-row">
+            {(['spades', 'hearts', 'diamonds', 'clubs'] as Suit[]).map((suit) => (
+              <button key={suit} className="card-slot foundation-slot" onClick={() => moveSelectedToFoundation(suit)}>
+                {state.foundations[suit].length > 0 ? (
+                  <PlayingCardView card={state.foundations[suit][state.foundations[suit].length - 1]} />
+                ) : (
+                  <span className={getSuitColor(suit)}>{getSuitSymbol(suit)}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="tableau-row">
+          {state.tableau.map((column, columnIndex) => (
+            <div key={columnIndex} className="tableau-column">
+              {column.length === 0 ? (
+                <button className="card-slot empty-tableau" onClick={() => moveSelectedToTableau(columnIndex)} />
+              ) : (
+                column.map((card, cardIndex) => (
+                  <button
+                    key={card.id}
+                    className="tableau-card-button"
+                    style={{ marginTop: cardIndex === 0 ? 0 : card.faceUp ? -66 : -84 }}
+                    onClick={() => selectTableau(columnIndex, cardIndex)}
+                  >
+                    <PlayingCardView
+                      card={card}
+                      selected={
+                        selection?.source === 'tableau' &&
+                        selection.column === columnIndex &&
+                        cardIndex >= selection.index
+                      }
+                    />
+                  </button>
+                ))
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function PlayingCardView({ card, selected = false }: { card: PlayingCard; selected?: boolean }) {
+  if (!card.faceUp) return <span className="playing-card card-back" />;
+
+  return (
+    <span className={`playing-card ${getSuitColor(card.suit)} ${selected ? 'is-selected' : ''}`}>
+      <span>{getRankLabel(card.rank)}</span>
+      <span>{getSuitSymbol(card.suit)}</span>
+    </span>
+  );
+}
+
+function createDeckSolitaireState(): DeckSolitaireState {
+  const deck = shuffleArray(
+    (['spades', 'hearts', 'diamonds', 'clubs'] as Suit[]).flatMap((suit) =>
+      Array.from({ length: 13 }, (_, index) => ({
+        id: `${suit}-${index + 1}`,
+        suit,
+        rank: index + 1,
+        faceUp: false,
+      })),
+    ),
+  );
+  const tableau: PlayingCard[][] = Array.from({ length: 7 }, () => []);
+
+  for (let column = 0; column < 7; column += 1) {
+    for (let count = 0; count <= column; count += 1) {
+      const card = deck.pop()!;
+      tableau[column].push({ ...card, faceUp: count === column });
+    }
+  }
+
+  return {
+    stock: deck,
+    waste: [],
+    foundations: { spades: [], hearts: [], diamonds: [], clubs: [] },
+    tableau,
+  };
+}
+
+function getSelectedCards(state: DeckSolitaireState, selection: DeckSelection) {
+  return selection.source === 'waste'
+    ? [state.waste[selection.index]]
+    : state.tableau[selection.column].slice(selection.index);
+}
+
+function moveToFoundation(state: DeckSolitaireState, selection: DeckSelection, suit: Suit) {
+  const cards = getSelectedCards(state, selection);
+  if (cards.length !== 1 || cards[0].suit !== suit) return null;
+
+  const foundation = state.foundations[suit];
+  if (cards[0].rank !== foundation.length + 1) return null;
+
+  const next = removeSelectedCards(state, selection);
+  return {
+    ...next,
+    foundations: {
+      ...next.foundations,
+      [suit]: [...foundation, cards[0]],
+    },
+  };
+}
+
+function moveToTableau(state: DeckSolitaireState, selection: DeckSelection, targetColumn: number) {
+  const cards = getSelectedCards(state, selection);
+  if (cards.length === 0) return null;
+  if (selection.source === 'tableau' && selection.column === targetColumn) return null;
+
+  const target = state.tableau[targetColumn];
+  const movingCard = cards[0];
+  const targetCard = target[target.length - 1];
+  const canMove = targetCard
+    ? isOppositeColor(movingCard, targetCard) && movingCard.rank === targetCard.rank - 1
+    : movingCard.rank === 13;
+
+  if (!canMove) return null;
+
+  const next = removeSelectedCards(state, selection);
+  const tableau = next.tableau.map((column, index) => (index === targetColumn ? [...column, ...cards] : column));
+  return { ...next, tableau };
+}
+
+function removeSelectedCards(state: DeckSolitaireState, selection: DeckSelection): DeckSolitaireState {
+  if (selection.source === 'waste') {
+    return { ...state, waste: state.waste.slice(0, selection.index) };
+  }
+
+  const tableau = state.tableau.map((column, index) => {
+    if (index !== selection.column) return column;
+    const remaining = column.slice(0, selection.index);
+    const last = remaining[remaining.length - 1];
+    return last && !last.faceUp ? [...remaining.slice(0, -1), { ...last, faceUp: true }] : remaining;
+  });
+
+  return { ...state, tableau };
+}
+
+function isOppositeColor(first: PlayingCard, second: PlayingCard) {
+  return getSuitColor(first.suit) !== getSuitColor(second.suit);
+}
+
+function getSuitColor(suit: Suit) {
+  return suit === 'hearts' || suit === 'diamonds' ? 'red-card' : 'black-card';
+}
+
+function getSuitSymbol(suit: Suit) {
+  return suit === 'spades' ? '♠' : suit === 'hearts' ? '♥' : suit === 'diamonds' ? '♦' : '♣';
+}
+
+function getRankLabel(rank: number) {
+  return rank === 1 ? 'A' : rank === 11 ? 'J' : rank === 12 ? 'Q' : rank === 13 ? 'K' : String(rank);
 }
 
 createRoot(document.getElementById('root')!).render(
