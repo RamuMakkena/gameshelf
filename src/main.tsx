@@ -16,6 +16,12 @@ type Route =
 type Mark = 'X' | 'O';
 type Square = Mark | null;
 type WordLength = 3 | 4 | 5;
+type WordDefinition = {
+  word: string;
+  partOfSpeech: string;
+  definition: string;
+  example?: string;
+};
 type MoveDirection = 'up' | 'down' | 'left' | 'right';
 type Game2048State = {
   board: number[];
@@ -552,6 +558,8 @@ function WordShift({ title, onHome }: { title: string; onHome: () => void }) {
   const [message, setMessage] = useState('Change one letter to make a new word.');
   const [bestScore, setBestScore] = useState(() => getStoredWordBestScore());
   const [isChecking, setIsChecking] = useState(false);
+  const [definition, setDefinition] = useState<WordDefinition | null>(null);
+  const [isLoadingDefinition, setIsLoadingDefinition] = useState(false);
   const currentWord = history[history.length - 1];
   const score = history.length - 1;
   const status = `Score ${score} · Best ${bestScore}`;
@@ -563,6 +571,22 @@ function WordShift({ title, onHome }: { title: string; onHome: () => void }) {
       localStorage.setItem('gameshelf-word-shift-best', String(score));
     }
   }, [bestScore, score]);
+
+  useEffect(() => {
+    let isCurrent = true;
+    setDefinition(null);
+    setIsLoadingDefinition(true);
+
+    getDictionaryDefinition(currentWord).then((nextDefinition) => {
+      if (!isCurrent) return;
+      setDefinition(nextDefinition);
+      setIsLoadingDefinition(false);
+    });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [currentWord]);
 
   function changeLength(nextLength: WordLength) {
     const startWord = getRandomWord(nextLength);
@@ -599,14 +623,15 @@ function WordShift({ title, onHome }: { title: string; onHome: () => void }) {
 
     setIsChecking(true);
     setMessage('Checking dictionary...');
-    const isValidWord = await checkDictionaryWord(nextWord);
+    const nextDefinition = await getDictionaryDefinition(nextWord);
     setIsChecking(false);
 
-    if (!isValidWord) {
+    if (!nextDefinition) {
       setMessage('Dictionary did not recognize that word. Internet is required for this check.');
       return;
     }
 
+    setDefinition(nextDefinition);
     setHistory((words) => [...words, nextWord]);
     setEntry('');
     setMessage('Good word.');
@@ -651,6 +676,24 @@ function WordShift({ title, onHome }: { title: string; onHome: () => void }) {
           <strong>{currentWord}</strong>
         </div>
 
+        <div className="word-definition-card">
+          <span className="definition-label">Dictionary</span>
+          {isLoadingDefinition ? (
+            <p>Loading meaning...</p>
+          ) : definition ? (
+            <>
+              <div className="definition-heading">
+                <strong>{definition.word}</strong>
+                <span>{definition.partOfSpeech}</span>
+              </div>
+              <p>{definition.definition}</p>
+              <small>{definition.example ? `Example: ${definition.example}` : 'No sample usage available for this word.'}</small>
+            </>
+          ) : (
+            <p>Meaning unavailable. Dictionary lookup needs internet.</p>
+          )}
+        </div>
+
         <form className="word-entry" onSubmit={submitWord}>
           <input
             value={entry}
@@ -689,12 +732,36 @@ function getStoredWordBestScore() {
   return Number.isFinite(value) ? value : 0;
 }
 
-async function checkDictionaryWord(word: string) {
+async function getDictionaryDefinition(word: string): Promise<WordDefinition | null> {
   try {
     const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
-    return response.ok;
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (!Array.isArray(data)) return null;
+
+    for (const entry of data) {
+      if (!entry || !Array.isArray(entry.meanings)) continue;
+
+      for (const meaning of entry.meanings) {
+        const firstDefinition = Array.isArray(meaning.definitions)
+          ? meaning.definitions.find((item: { definition?: unknown }) => typeof item.definition === 'string')
+          : null;
+
+        if (firstDefinition?.definition) {
+          return {
+            word: typeof entry.word === 'string' ? entry.word : word,
+            partOfSpeech: typeof meaning.partOfSpeech === 'string' ? meaning.partOfSpeech : 'word',
+            definition: firstDefinition.definition,
+            example: typeof firstDefinition.example === 'string' ? firstDefinition.example : undefined,
+          };
+        }
+      }
+    }
+
+    return null;
   } catch {
-    return false;
+    return null;
   }
 }
 
